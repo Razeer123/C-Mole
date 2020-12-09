@@ -10,8 +10,6 @@ General information about the project.
 
 # Part 2
 
-Reading arguments and acting correctly according to their presence or absence.
+Reading arguments. If they cannot be found program looks for them in environment variables. If they still aren't there it throws an error or proceeds with some default values.
 
-**State**: Partly finished, work still in progress 👷‍♀️🔧
-
-**TODO:** add reading from ENVIRONEMNTAL VARIABLES and error-checking, remember to disable indexing in case of missing -t argument.
+**State**: Finished ✅
