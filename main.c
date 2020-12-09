@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <ftw.h>
+#include <string.h>
 
 #define ERR(source) (perror(source), \
         fprintf(stderr, "%s:%d\n", __FILE__, __LINE__), \
@@ -18,17 +19,18 @@ void readArguments(int argc, char ** argv, char ** dirPath, char ** filePath, in
 
 int main(int argc, char ** argv) {
 
-    // TODO: Add correct behaviours to when certain arguments are missing
-
     // dirPath -> path in which we start indexing files
     // filePath -> path for index file
     // time -> time between rebuilds of index | optional
 
-    char * dirPath;
-    char * filePath;
-    int time = -1;
+    char * dirPath = NULL;
+    char * filePath = NULL;
+    int time = 0;
+    int reindex;
 
     readArguments(argc, argv, &dirPath, &filePath, &time);
+    // reindex -> stores boolean information about if reindexing will be happening
+    reindex = time ? 1 : 0;
 
     return EXIT_SUCCESS;
 
@@ -49,6 +51,8 @@ int recursiveWalk(const char * fileName, const struct stat * s, int fileType, st
 void readArguments(int argc, char ** argv, char ** dirPath, char ** filePath, int * time) {
 
     int c;
+    char * dirEnv = getenv("MOLE_DIR");
+    char * fileEnv = getenv("MOLE_INDEX_PATH");
 
     while((c = getopt(argc, argv, "d:f:t:")) != -1) {
 
@@ -70,5 +74,15 @@ void readArguments(int argc, char ** argv, char ** dirPath, char ** filePath, in
                 ERR("Invalid argument!");
 
         }
+    }
+
+    if (*dirPath == NULL && dirEnv) {
+        *dirPath = dirEnv;
+    } else if (dirPath == NULL) {
+        ERR("Program must have provide direction argument!");
+    }
+
+    if (*filePath == NULL && fileEnv) {
+        *filePath = fileEnv;
     }
 }
