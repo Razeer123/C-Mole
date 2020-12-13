@@ -18,4 +18,4 @@ Reading arguments. If they cannot be found program looks for them in environment
 
 Opening a file and reading index from it, if its't not there program starts indexing files.
 
-**State**: Work in progress 👷‍♀️🔧
+**State**: Indexing function works. I still have to add writing & reading from file and thread support. 👷‍♀️🔧
