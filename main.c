@@ -1,3 +1,4 @@
+#define _XOPEN_SOURCE 500
 #include <stdio.h>
 #include <stdlib.h>
 #include <dirent.h>
@@ -6,8 +7,10 @@
 #include <ftw.h>
 #include <string.h>
 #include <sys/types.h>
-#include <sys/stat.h>
 #include <fcntl.h>
+#include <pthread.h>
+#include <sys/mman.h>
+#include <errno.h>
 
 #define ERR(source) (perror(source), \
         fprintf(stderr, "%s:%d\n", __FILE__, __LINE__), \
@@ -16,16 +19,8 @@
 #define MAX_DEPTH 100
 #define MAX_FILES 50
 #define MAX_SIZE 100
-
-// TODO: Verify that the function that opens a file works
-// FIXME: Fix recursiveWalk so that it indexes files properly
-
-int openFile(FILE ** FILE, char * filePath);
-int recursiveWalk(const char * fileName, const struct stat * s, int fileType, struct FTW * f);
-void readArguments(int argc, char ** argv, char ** dirPath, char ** filePath, int * time);
-
-// TODO: Fill this struct with that that we have to index
-// TODO: Create an array of structs to keep all indexed data
+#define MAX_PATH 100
+#define BUFFER_SIZE 10
 
 typedef struct indexData {
 
@@ -36,6 +31,20 @@ typedef struct indexData {
     char type[MAX_SIZE];
 
 } indexData_t;
+
+typedef struct neededVariables {
+    char dirPath[MAX_SIZE];
+    char filePath[MAX_SIZE];
+    pthread_t threadID;
+
+} neededVariables_t;
+
+int recursiveWalk(const char * fileName, const struct stat * s, int fileType, struct FTW * f);
+void readArguments(int argc, char ** argv, char ** dirPath, char ** filePath, int * time);
+void * threadWork(void * arguments);
+void printFile(char * filePath);
+void reindexFiles(neededVariables_t variablesStructure, int time);
+
 indexData_t indexArray[MAX_FILES];
 int start = 0;
 
@@ -45,31 +54,52 @@ int main(int argc, char ** argv) {
     // filePath -> path for index file
     // time -> time between rebuilds of index | optional
 
-    char * dirPath = NULL;
-    char * filePath = NULL;
+    char *dirPath = NULL;
+    char *filePath = NULL;
     int time = 0;
     int reindex;
-    FILE * file;
+    int file;
 
     readArguments(argc, argv, &dirPath, &filePath, &time);
     // reindex -> stores boolean information about if reindexing will be happening
     reindex = time ? 1 : 0;
 
-    // TODO: Write some code so that function really works
-    if (openFile(&file, filePath) == 0) {
-        // function that should recursively traverse given location
-        nftw(dirPath, recursiveWalk, MAX_DEPTH, FTW_PHYS);
+    neededVariables_t variablesStructure;
+    strcpy(variablesStructure.dirPath, dirPath);
+
+    // It's the beginning of the program, checks whether index the file for the first time or print the content
+
+    if ((file = open(filePath, O_RDONLY, 0777)) < 0) {
+        errno = 0;
+/*        if (filePath != NULL) {
+            strcpy(variablesStructure.filePath, filePath);
+            if (((pthread_create(&variablesStructure.threadID, NULL, threadWork, &variablesStructure))) != 0) {
+                ERR("Error in pthread_create.");
+            }
+        } else {*/
+        char *functionPath = malloc(sizeof(char) * MAX_PATH);
+        strcat(functionPath, dirPath);
+        strcat(functionPath, "/file.mole_index");
+        strcpy(variablesStructure.filePath, functionPath);
+        memset(functionPath, 0, MAX_PATH);
+
+        if (((pthread_create(&variablesStructure.threadID, NULL, threadWork, &variablesStructure))) != 0) {
+            ERR("Error in pthread_create.");
+        }
     } else {
-        // read index from the file
+        strcpy(variablesStructure.filePath, filePath);
     }
 
-    for (int i = 0; i < start; i++) {
-        printf("%s\n", indexArray[i].name);
-        printf("%s\n", indexArray[i].type);
-        printf("%s\n", indexArray[i].path);
-        printf("%d\n", indexArray[i].uid);
-        printf("%lu\n\n"
-               "", indexArray[i].size);
+    // Waits for threads to finish their job
+    // TODO: Add handling of this thing
+
+    int err = pthread_join(variablesStructure.threadID, NULL);
+    printFile(variablesStructure.filePath);
+
+    // REMEMBER THAT FILE IS STILL OPENED
+
+    if (reindex) {
+        reindexFiles(variablesStructure, time);
     }
 
     // TODO: Wait for user input here
@@ -78,12 +108,7 @@ int main(int argc, char ** argv) {
 
 }
 
-//TODO: Add a thread after implementing the algorithm, later.
-
 int recursiveWalk(const char * fileName, const struct stat * s, int fileType, struct FTW * f) {
-
-    // TODO: Open each file (open function gets binary input). Compare few bytes with signature to get file type.
-    // TODO: Fill structure with given data. If it's not a correct file, discard it.
 
     int file;
     int * signature = malloc(MAGIC_LENGTH);
@@ -130,6 +155,10 @@ int recursiveWalk(const char * fileName, const struct stat * s, int fileType, st
 
     }
 
+    if (close(file) < 0) {
+        ERR("Error when closing the file!");
+    }
+
     return 0;
 
 }
@@ -173,13 +202,89 @@ void readArguments(int argc, char ** argv, char ** dirPath, char ** filePath, in
     }
 }
 
-int openFile(FILE ** file, char * filePath) {
+void * threadWork(void * arguments) {
 
-    // Opens a file and checks correctness of the operation
+    neededVariables_t * variables = arguments;
+    char dirArray[MAX_PATH];
+    char fileArray[MAX_PATH];
+    strcpy(dirArray, variables->dirPath);
+    strcpy(fileArray, variables->filePath);
+    nftw(dirArray, recursiveWalk, MAX_DEPTH, FTW_PHYS);
+    int file;
 
-    if ((*file = fopen(filePath, "w+")) == NULL) {
-        return 0;
+    // Opening file, creating if doesn't exist
+
+    if ((file = open(fileArray, O_WRONLY | O_CREAT | O_TRUNC | O_APPEND, 0666)) < 0) {
+        ERR("Error when opening / creating file.");
     }
 
-    return 1;
+    // Writing data to index file
+
+    for (int i = 0; i < start; i++) {
+
+        write(file, "Name: ", 6);
+        write(file, indexArray[i].name, strlen(indexArray[i].name));
+        write(file, "\n", 1);
+        write(file, "Path: ", 6);
+        write(file, indexArray[i].path, strlen(indexArray[i].path));
+        write(file, "\n", 1);
+
+        char buffer[BUFFER_SIZE];
+        sprintf(buffer, "%lu", indexArray[i].size);
+        write(file, "Size: ", 6);
+        write(file, buffer, strlen(buffer));
+        write(file, "\n", 1);
+
+        sprintf(buffer, "%d", indexArray[i].uid);
+        write(file, "UID: ", 5);
+        write(file, buffer, strlen(buffer));
+        write(file, "\n", 1);
+
+        write(file, "Type: ", 6);
+        write(file, &indexArray[i].type, strlen(indexArray[i].type));
+        write(file, "\n\n", 2);
+
+    }
+
+    fprintf(stdout, "Indexing finished.\n");
+    close(file);
+
+    return NULL;
+
+}
+
+void printFile(char * filePath) {
+
+    int file;
+
+    if ((file = open(filePath, O_RDONLY, 0666)) < 0) {
+        ERR("Error when opening / creating file.");
+    }
+
+    char buffer[MAX_SIZE * 100];
+    while (read(file, buffer, sizeof(buffer)) > 0) {
+        fprintf(stdout, "%s", buffer);
+    }
+
+    memset(buffer, 0, sizeof(buffer));
+
+    close(file);
+
+}
+
+// TODO: Somehow safeguard the index file when indexing
+
+void reindexFiles(neededVariables_t variablesStructure, int time) {
+
+    while (1) {
+
+        sleep(time);
+
+        if (((pthread_create(&variablesStructure.threadID, NULL, threadWork, &variablesStructure))) != 0) {
+            ERR("Error in pthread_create.");
+        }
+
+        printFile(variablesStructure.filePath);
+
+    }
 }
