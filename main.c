@@ -72,7 +72,6 @@ int main(int argc, char ** argv) {
     int time = 0;
     int reindex;
     int file;
-    int err;
 
     readArguments(argc, argv, &dirPath, &filePath, &time);
     // reindex -> stores boolean information about if reindexing will be happening
@@ -94,6 +93,9 @@ int main(int argc, char ** argv) {
     if ((file = open(filePath, O_RDONLY, 0777)) < 0) {
         errno = 0;
         char *functionPath = malloc(sizeof(char) * MAX_PATH);
+        if (functionPath == NULL) {
+            ERR("Error in malloc function");
+        }
         strcat(functionPath, dirPath);
         strcat(functionPath, "/file.mole_index");
         strcpy(variablesStructure.filePath, functionPath);
@@ -103,21 +105,16 @@ int main(int argc, char ** argv) {
             ERR("Error in pthread_create.");
         }
 
-        if ((err = pthread_join(variablesStructure.threadID, NULL) != 0)) {
+        if ((pthread_join(variablesStructure.threadID, NULL) != 0)) {
             ERR("Error in pthread_join.");
         }
-
 
     } else {
         strcpy(variablesStructure.filePath, filePath);
         writeToStructure(variablesStructure.filePath);
     }
 
-    // Waits for threads to finish their job
-
     printFile(variablesStructure.filePath);
-
-    // REMEMBER THAT FILE IS STILL OPENED
 
     if (reindex) {
         if (((pthread_create(&variablesStructure.threadID, NULL, reindexFiles, &variablesStructure))) != 0) {
@@ -133,6 +130,11 @@ int main(int argc, char ** argv) {
 
         scanf("%[^\n]%*c", input);
 
+        if (strlen(input) == MAX_SIZE && input[MAX_SIZE - 1] != '\0') {
+            fprintf(stderr, "There is a 100 characters limit - choose another path.\n");
+            continue;
+        }
+
         if ((strcmp(input, "exit")) == 0) {
             safelyExitProgram(file);
         } else if (strcmp(input, "exit!") == 0) {
@@ -145,9 +147,9 @@ int main(int argc, char ** argv) {
                 continue;
             } else {
                 pthread_mutex_unlock(&controls.indexInProgress);
-                do {
+                while (controls.savingInProgress == 1) {
                     sleep(1);
-                } while (controls.savingInProgress == 1);
+                }
                 if (((pthread_create(&variablesStructure.threadID, NULL, forceIndexFiles, &variablesStructure))) != 0) {
                     ERR("Error in pthread_create.");
                 }
@@ -190,11 +192,10 @@ int recursiveWalk(const char * fileName, const struct stat * s, int fileType, st
         ERR("Error when opening a file!");
     }
 
-    // This should give us file signature that we'll compare with known values
+    // This gives us a file signature that we'll compare with known values
 
     read(file, signature, MAGIC_LENGTH);
     sprintf(signatureHex, "%x", signature[0]);
-
 
     if (fileType == FTW_D || strstr(signatureHex, "ffd8") != NULL || (strstr(signatureHex, "474e5089") != NULL || strstr(signatureHex, "8088b1f") != NULL
     || strstr(signatureHex, "4034b50") != NULL)) {
@@ -290,25 +291,20 @@ void * threadWork(void * arguments) {
 
     for (int i = 0; i < start; i++) {
 
-        //write(file, "Name: ", 6);
         write(file, indexArray[i].name, strlen(indexArray[i].name));
         write(file, "\n", 1);
-        //write(file, "Path: ", 6);
         write(file, indexArray[i].path, strlen(indexArray[i].path));
         write(file, "\n", 1);
 
         char buffer[BUFFER_SIZE];
         sprintf(buffer, "%lu", indexArray[i].size);
-        //write(file, "Size: ", 6);
         write(file, buffer, strlen(buffer));
         write(file, "\n", 1);
 
         sprintf(buffer, "%d", indexArray[i].uid);
-        //write(file, "UID: ", 5);
         write(file, buffer, strlen(buffer));
         write(file, "\n", 1);
 
-        //write(file, "Type: ", 6);
         write(file, &indexArray[i].type, strlen(indexArray[i].type));
         write(file, "\n", 1);
 
@@ -318,7 +314,9 @@ void * threadWork(void * arguments) {
 
     controls.savingInProgress = 0;
     fprintf(stdout, "Indexing finished.\n");
-    close(file);
+    if (close(file) < 0) {
+        ERR("Error when closing the file!");
+    }
 
     return NULL;
 
@@ -339,7 +337,9 @@ void printFile(char * filePath) {
 
     memset(buffer, 0, sizeof(buffer));
 
-    close(file);
+    if (close(file) < 0) {
+        ERR("Error when closing the file!");
+    }
 
 }
 
@@ -364,24 +364,27 @@ void * reindexFiles(void * arguments) {
             threadWork(variables);
             controls.indexingInProgress = 0;
         }
-
     }
 }
 
 int forceExitProgram(int file, pthread_t pid) {
-    do {
+    while (controls.indexingInProgress == 1) {
         sleep(1);
-    } while (controls.savingInProgress == 1);
+    }
     pthread_cancel(pid);
-    close(file);
+    if (close(file) < 0) {
+        ERR("Error when closing the file!");
+    }
     exit(EXIT_SUCCESS);
 }
 
 int safelyExitProgram(int file) {
-    do {
+    while (controls.indexingInProgress == 1) {
         sleep(1);
-    } while (controls.indexingInProgress == 1);
-    close(file);
+    }
+    if (close(file) < 0) {
+        ERR("Error when closing the file!");
+    }
     exit(EXIT_SUCCESS);
 }
 
@@ -432,7 +435,9 @@ void writeToStructure(char * filePath) {
     }
 
     memset(buffer, 0, sizeof(buffer));
-    close(file);
+    if (close(file) < 0) {
+        ERR("Error when closing the file!");
+    }
 
 }
 
