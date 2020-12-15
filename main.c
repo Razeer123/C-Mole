@@ -36,17 +36,27 @@ typedef struct neededVariables {
     char dirPath[MAX_SIZE];
     char filePath[MAX_SIZE];
     pthread_t threadID;
-
+    int time;
 } neededVariables_t;
 
 int recursiveWalk(const char * fileName, const struct stat * s, int fileType, struct FTW * f);
 void readArguments(int argc, char ** argv, char ** dirPath, char ** filePath, int * time);
 void * threadWork(void * arguments);
 void printFile(char * filePath);
-void reindexFiles(neededVariables_t variablesStructure, int time);
+void * reindexFiles(void * arguments);
+int safelyExitProgram(int file);
+int forceExitProgram(int file, pthread_t pid);
+void countEachFile();
+void findLargerFiles(long size);
+void writeToStructure(char * filePath);
+void * forceIndexFiles(void * arguments);
+void findByNamePart(char * namePart);
+void findByID(int uid);
 
 indexData_t indexArray[MAX_FILES];
 int start = 0;
+int indexingInProgress = 0;
+int savingInProgress = 0;
 
 int main(int argc, char ** argv) {
 
@@ -59,6 +69,7 @@ int main(int argc, char ** argv) {
     int time = 0;
     int reindex;
     int file;
+    int err;
 
     readArguments(argc, argv, &dirPath, &filePath, &time);
     // reindex -> stores boolean information about if reindexing will be happening
@@ -66,17 +77,12 @@ int main(int argc, char ** argv) {
 
     neededVariables_t variablesStructure;
     strcpy(variablesStructure.dirPath, dirPath);
+    variablesStructure.time = time;
 
     // It's the beginning of the program, checks whether index the file for the first time or print the content
 
     if ((file = open(filePath, O_RDONLY, 0777)) < 0) {
         errno = 0;
-/*        if (filePath != NULL) {
-            strcpy(variablesStructure.filePath, filePath);
-            if (((pthread_create(&variablesStructure.threadID, NULL, threadWork, &variablesStructure))) != 0) {
-                ERR("Error in pthread_create.");
-            }
-        } else {*/
         char *functionPath = malloc(sizeof(char) * MAX_PATH);
         strcat(functionPath, dirPath);
         strcat(functionPath, "/file.mole_index");
@@ -86,23 +92,74 @@ int main(int argc, char ** argv) {
         if (((pthread_create(&variablesStructure.threadID, NULL, threadWork, &variablesStructure))) != 0) {
             ERR("Error in pthread_create.");
         }
+
+        if (err = pthread_join(variablesStructure.threadID, NULL) != 0) {
+            ERR("Error in pthread_join.");
+        }
+
     } else {
         strcpy(variablesStructure.filePath, filePath);
+        writeToStructure(variablesStructure.filePath);
     }
 
     // Waits for threads to finish their job
-    // TODO: Add handling of this thing
 
-    int err = pthread_join(variablesStructure.threadID, NULL);
     printFile(variablesStructure.filePath);
 
     // REMEMBER THAT FILE IS STILL OPENED
 
     if (reindex) {
-        reindexFiles(variablesStructure, time);
+        if (((pthread_create(&variablesStructure.threadID, NULL, reindexFiles, &variablesStructure))) != 0) {
+            ERR("Error in pthread_create.");
+        }
     }
 
     // TODO: Wait for user input here
+
+    // Main menu
+
+    char input[MAX_SIZE];
+
+    while (1) {
+
+        scanf("%[^\n]%*c", input);
+
+        if ((strcmp(input, "exit")) == 0) {
+            safelyExitProgram(file);
+        } else if (strcmp(input, "exit!") == 0) {
+            forceExitProgram(file, variablesStructure.threadID);
+        } else if (strcmp(input, "index") == 0) {
+            if (indexingInProgress == 1) {
+                fprintf(stderr, "Indexing is already in progress!\n");
+                continue;
+            } else {
+                do {
+                    sleep(1);
+                } while (savingInProgress == 1);
+                if (((pthread_create(&variablesStructure.threadID, NULL, forceIndexFiles, &variablesStructure))) != 0) {
+                    ERR("Error in pthread_create.");
+                }
+            }
+        } else if (strcmp(input, "count") == 0) {
+            countEachFile();
+        } else if (strstr(input, "largerthan") != NULL) {
+            char temp[MAX_SIZE];
+            memcpy(temp, &input[11], strlen(input));
+            long number = atoi(temp);
+            findLargerFiles(number);
+        } else if (strstr(input, "namepart") != NULL) {
+            char temp[MAX_SIZE];
+            memcpy(temp, &input[9], strlen(input));
+            findByNamePart(temp);
+        } else if (strstr(input, "owner uid") != NULL) {
+            char temp[MAX_SIZE];
+            memcpy(temp, &input[10], strlen(input));
+            int number = atoi(temp);
+            findByID(number);
+        } else {
+            fprintf(stderr, "Incorrect command! Try again.\n");
+        }
+    }
 
     return EXIT_SUCCESS;
 
@@ -220,32 +277,37 @@ void * threadWork(void * arguments) {
 
     // Writing data to index file
 
+    savingInProgress = 1;
+
     for (int i = 0; i < start; i++) {
 
-        write(file, "Name: ", 6);
+        //write(file, "Name: ", 6);
         write(file, indexArray[i].name, strlen(indexArray[i].name));
         write(file, "\n", 1);
-        write(file, "Path: ", 6);
+        //write(file, "Path: ", 6);
         write(file, indexArray[i].path, strlen(indexArray[i].path));
         write(file, "\n", 1);
 
         char buffer[BUFFER_SIZE];
         sprintf(buffer, "%lu", indexArray[i].size);
-        write(file, "Size: ", 6);
+        //write(file, "Size: ", 6);
         write(file, buffer, strlen(buffer));
         write(file, "\n", 1);
 
         sprintf(buffer, "%d", indexArray[i].uid);
-        write(file, "UID: ", 5);
+        //write(file, "UID: ", 5);
         write(file, buffer, strlen(buffer));
         write(file, "\n", 1);
 
-        write(file, "Type: ", 6);
+        //write(file, "Type: ", 6);
         write(file, &indexArray[i].type, strlen(indexArray[i].type));
-        write(file, "\n\n", 2);
+        write(file, "\n", 1);
 
     }
 
+    write(file, "END\n\0", 5);
+
+    savingInProgress = 0;
     fprintf(stdout, "Indexing finished.\n");
     close(file);
 
@@ -274,17 +336,161 @@ void printFile(char * filePath) {
 
 // TODO: Somehow safeguard the index file when indexing
 
-void reindexFiles(neededVariables_t variablesStructure, int time) {
+void * reindexFiles(void * arguments) {
+
+    neededVariables_t * variables = arguments;
+    start = 0;
+    memset(indexArray, 0, sizeof indexArray);
 
     while (1) {
 
-        sleep(time);
+        sleep(variables->time);
+        indexingInProgress = 1;
+        threadWork(variables);
+        indexingInProgress = 0;
 
-        if (((pthread_create(&variablesStructure.threadID, NULL, threadWork, &variablesStructure))) != 0) {
-            ERR("Error in pthread_create.");
+    }
+}
+
+int forceExitProgram(int file, pthread_t pid) {
+    do {
+        sleep(1);
+    } while (savingInProgress == 1);
+    pthread_cancel(pid);
+    close(file);
+    exit(EXIT_SUCCESS);
+}
+
+int safelyExitProgram(int file) {
+    do {
+        sleep(1);
+    } while (indexingInProgress == 1);
+    close(file);
+    exit(EXIT_SUCCESS);
+}
+
+void writeToStructure(char * filePath) {
+
+    int file;
+
+    if ((file = open(filePath, O_RDONLY, 0666)) < 0) {
+        ERR("Error when opening / creating file.");
+    }
+
+    char buffer[MAX_SIZE * 100];
+    char * token;
+    while (read(file, buffer, sizeof(buffer)) > 0);
+    int i = 0;
+    int j = 0;
+
+    token = strtok(buffer, "\n");
+    strcpy(indexArray[j].name, token);
+    i++;
+
+    while (token != NULL) {
+        token = strtok(NULL, "\n");
+        if (strcmp(token, "END") == 0) {
+            break;
         }
+        if (i == 0) {
+            strcpy(indexArray[j].name, token);
+            i++;
+        } else if (i == 1) {
+            strcpy(indexArray[j].path, token);
+            i++;
+        } else if (i == 2) {
+            indexArray[j].size = atoi(token);
+            i++;
+        } else if (i == 3) {
+            indexArray[j].uid = atoi(token);
+            i++;
+        } else {
+            strcpy(indexArray[j].type, token);
+            i++;
+        }
+        if (i == 5) {
+            i = 0;
+            j++;
+            start++;
+        }
+    }
 
-        printFile(variablesStructure.filePath);
+    memset(buffer, 0, sizeof(buffer));
+    close(file);
 
+}
+
+void countEachFile() {
+
+    int directories = 0;
+    int jpeg = 0;
+    int png = 0;
+    int gzip = 0;
+    int zip = 0;
+
+    for (int i = 0; i < start; i++) {
+        if ((strcmp(indexArray[i].type, "folder")) == 0) {
+            directories++;
+        } else if ((strcmp(indexArray[i].type, "jpeg")) == 0) {
+            jpeg++;
+        } else if ((strcmp(indexArray[i].type, "png")) == 0) {
+            png++;
+        } else if ((strcmp(indexArray[i].type, "gzip")) == 0) {
+            gzip++;
+        } else {
+            zip++;
+        }
+    }
+
+    printf("In index there are %d directories, %d jpeg files, %d png files, %d gzip files and %d zip files.\n", directories, jpeg, png, gzip, zip);
+
+}
+
+void findLargerFiles(long size) {
+
+    for (int i = 0; i < start; i++) {
+        if (indexArray[i].size > size) {
+            printf("%s\n", indexArray[i].path);
+            printf("%lu\n", indexArray[i].size);
+            printf("%s\n\n", indexArray[i].type);
+        }
+    }
+}
+
+void * forceIndexFiles(void * arguments) {
+
+    neededVariables_t * variables = arguments;
+    start = 0;
+    memset(indexArray, 0, sizeof indexArray);
+
+    if (!indexingInProgress) {
+        indexingInProgress = 1;
+        threadWork(variables);
+        indexingInProgress = 0;
+    }
+
+    return NULL;
+
+}
+
+void findByNamePart(char * namePart) {
+
+    for (int i = 0; i < start; i++) {
+        if (strstr(indexArray[i].name, namePart) != NULL) {
+            printf("%s\n", indexArray[i].path);
+            printf("%lu\n", indexArray[i].size);
+            printf("%s\n\n", indexArray[i].type);
+        }
+    }
+}
+
+void findByID(int uid) {
+
+    for (int i = 0; i < start; i++) {
+        if (indexArray[i].uid == uid) {
+            printf("%s\n", indexArray[i].path);
+            printf("%lu\n", indexArray[i].size);
+            printf("%s\n\n", indexArray[i].type);
+        }
     }
 }
