@@ -1,12 +1,10 @@
 #define _XOPEN_SOURCE 500
 #include <stdio.h>
 #include <stdlib.h>
-#include <dirent.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <ftw.h>
 #include <string.h>
-#include <sys/types.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <sys/mman.h>
@@ -39,6 +37,12 @@ typedef struct neededVariables {
     int time;
 } neededVariables_t;
 
+typedef struct controlSaving {
+    int indexingInProgress;
+    int savingInProgress;
+    pthread_mutex_t indexInProgress;
+} controlSaving_t;
+
 int recursiveWalk(const char * fileName, const struct stat * s, int fileType, struct FTW * f);
 void readArguments(int argc, char ** argv, char ** dirPath, char ** filePath, int * time);
 void * threadWork(void * arguments);
@@ -55,8 +59,7 @@ void findByID(int uid);
 
 indexData_t indexArray[MAX_FILES];
 int start = 0;
-int indexingInProgress = 0;
-int savingInProgress = 0;
+controlSaving_t controls;
 
 int main(int argc, char ** argv) {
 
@@ -79,6 +82,13 @@ int main(int argc, char ** argv) {
     strcpy(variablesStructure.dirPath, dirPath);
     variablesStructure.time = time;
 
+    // Initializing controls variables
+
+    controls.indexingInProgress = 0;
+    controls.savingInProgress = 0;
+    pthread_mutex_t firstMutex = PTHREAD_MUTEX_INITIALIZER;
+    controls.indexInProgress = firstMutex;
+
     // It's the beginning of the program, checks whether index the file for the first time or print the content
 
     if ((file = open(filePath, O_RDONLY, 0777)) < 0) {
@@ -93,9 +103,10 @@ int main(int argc, char ** argv) {
             ERR("Error in pthread_create.");
         }
 
-        if (err = pthread_join(variablesStructure.threadID, NULL) != 0) {
+        if ((err = pthread_join(variablesStructure.threadID, NULL) != 0)) {
             ERR("Error in pthread_join.");
         }
+
 
     } else {
         strcpy(variablesStructure.filePath, filePath);
@@ -114,8 +125,6 @@ int main(int argc, char ** argv) {
         }
     }
 
-    // TODO: Wait for user input here
-
     // Main menu
 
     char input[MAX_SIZE];
@@ -129,13 +138,16 @@ int main(int argc, char ** argv) {
         } else if (strcmp(input, "exit!") == 0) {
             forceExitProgram(file, variablesStructure.threadID);
         } else if (strcmp(input, "index") == 0) {
-            if (indexingInProgress == 1) {
+            pthread_mutex_lock(&controls.indexInProgress);
+            if (controls.indexingInProgress == 1) {
+                pthread_mutex_unlock(&controls.indexInProgress);
                 fprintf(stderr, "Indexing is already in progress!\n");
                 continue;
             } else {
+                pthread_mutex_unlock(&controls.indexInProgress);
                 do {
                     sleep(1);
-                } while (savingInProgress == 1);
+                } while (controls.savingInProgress == 1);
                 if (((pthread_create(&variablesStructure.threadID, NULL, forceIndexFiles, &variablesStructure))) != 0) {
                     ERR("Error in pthread_create.");
                 }
@@ -151,18 +163,15 @@ int main(int argc, char ** argv) {
             char temp[MAX_SIZE];
             memcpy(temp, &input[9], strlen(input));
             findByNamePart(temp);
-        } else if (strstr(input, "owner uid") != NULL) {
+        } else if (strstr(input, "owner") != NULL) {
             char temp[MAX_SIZE];
-            memcpy(temp, &input[10], strlen(input));
+            memcpy(temp, &input[6], strlen(input));
             int number = atoi(temp);
             findByID(number);
         } else {
             fprintf(stderr, "Incorrect command! Try again.\n");
         }
     }
-
-    return EXIT_SUCCESS;
-
 }
 
 int recursiveWalk(const char * fileName, const struct stat * s, int fileType, struct FTW * f) {
@@ -277,7 +286,7 @@ void * threadWork(void * arguments) {
 
     // Writing data to index file
 
-    savingInProgress = 1;
+    controls.savingInProgress = 1;
 
     for (int i = 0; i < start; i++) {
 
@@ -307,7 +316,7 @@ void * threadWork(void * arguments) {
 
     write(file, "END\n\0", 5);
 
-    savingInProgress = 0;
+    controls.savingInProgress = 0;
     fprintf(stdout, "Indexing finished.\n");
     close(file);
 
@@ -339,15 +348,22 @@ void printFile(char * filePath) {
 void * reindexFiles(void * arguments) {
 
     neededVariables_t * variables = arguments;
-    start = 0;
-    memset(indexArray, 0, sizeof indexArray);
 
     while (1) {
 
         sleep(variables->time);
-        indexingInProgress = 1;
-        threadWork(variables);
-        indexingInProgress = 0;
+        pthread_mutex_lock(&controls.indexInProgress);
+        if (controls.indexingInProgress == 1) {
+            pthread_mutex_unlock(&controls.indexInProgress);
+            continue;
+        } else {
+            pthread_mutex_unlock(&controls.indexInProgress);
+            controls.indexingInProgress = 1;
+            start = 0;
+            memset(indexArray, 0, sizeof indexArray);
+            threadWork(variables);
+            controls.indexingInProgress = 0;
+        }
 
     }
 }
@@ -355,7 +371,7 @@ void * reindexFiles(void * arguments) {
 int forceExitProgram(int file, pthread_t pid) {
     do {
         sleep(1);
-    } while (savingInProgress == 1);
+    } while (controls.savingInProgress == 1);
     pthread_cancel(pid);
     close(file);
     exit(EXIT_SUCCESS);
@@ -364,7 +380,7 @@ int forceExitProgram(int file, pthread_t pid) {
 int safelyExitProgram(int file) {
     do {
         sleep(1);
-    } while (indexingInProgress == 1);
+    } while (controls.indexingInProgress == 1);
     close(file);
     exit(EXIT_SUCCESS);
 }
@@ -437,7 +453,7 @@ void countEachFile() {
             png++;
         } else if ((strcmp(indexArray[i].type, "gzip")) == 0) {
             gzip++;
-        } else {
+        } else if ((strcmp(indexArray[i].type, "zip")) == 0) {
             zip++;
         }
     }
@@ -448,11 +464,41 @@ void countEachFile() {
 
 void findLargerFiles(long size) {
 
+    FILE * file;
+    int count = 0;
+    char * fileEnv = getenv("PAGER");
+
     for (int i = 0; i < start; i++) {
         if (indexArray[i].size > size) {
-            printf("%s\n", indexArray[i].path);
-            printf("%lu\n", indexArray[i].size);
-            printf("%s\n\n", indexArray[i].type);
+            count++;
+        }
+    }
+
+    if (fileEnv != NULL && count >= 3) {
+
+        file = popen(fileEnv, "w");
+        if (file == NULL) {
+            ERR("Error in popen function.");
+        }
+
+        for (int i = 0; i < start; i++) {
+            if (indexArray[i].size > size) {
+                fprintf(file, "%s\n", indexArray[i].path);
+                fprintf(file, "%lu\n", indexArray[i].size);
+                fprintf(file, "%s\n\n", indexArray[i].type);
+            }
+        }
+
+        if (pclose(file) == -1) {
+            ERR("Error in pclose function.");
+        }
+    } else {
+        for (int i = 0; i < start; i++) {
+            if (indexArray[i].size > size) {
+                fprintf(stdout, "%s\n", indexArray[i].path);
+                fprintf(stdout, "%lu\n", indexArray[i].size);
+                fprintf(stdout, "%s\n\n", indexArray[i].type);
+            }
         }
     }
 }
@@ -463,10 +509,10 @@ void * forceIndexFiles(void * arguments) {
     start = 0;
     memset(indexArray, 0, sizeof indexArray);
 
-    if (!indexingInProgress) {
-        indexingInProgress = 1;
+    if (!controls.indexingInProgress) {
+        controls.indexingInProgress = 1;
         threadWork(variables);
-        indexingInProgress = 0;
+        controls.indexingInProgress = 0;
     }
 
     return NULL;
@@ -475,22 +521,82 @@ void * forceIndexFiles(void * arguments) {
 
 void findByNamePart(char * namePart) {
 
+    FILE * file;
+    int count = 0;
+    char * fileEnv = getenv("PAGER");
+
     for (int i = 0; i < start; i++) {
         if (strstr(indexArray[i].name, namePart) != NULL) {
-            printf("%s\n", indexArray[i].path);
-            printf("%lu\n", indexArray[i].size);
-            printf("%s\n\n", indexArray[i].type);
+            count++;
+        }
+    }
+
+    if (fileEnv != NULL && count >= 3) {
+
+        file = popen(fileEnv, "w");
+        if (file == NULL) {
+            ERR("Error in popen function.");
+        }
+
+        for (int i = 0; i < start; i++) {
+            if (strstr(indexArray[i].name, namePart) != NULL) {
+                fprintf(file, "%s\n", indexArray[i].path);
+                fprintf(file, "%lu\n", indexArray[i].size);
+                fprintf(file, "%s\n\n", indexArray[i].type);
+            }
+        }
+
+        if (pclose(file) == -1) {
+            ERR("Error in pclose function.");
+        }
+    } else {
+        for (int i = 0; i < start; i++) {
+            if (strstr(indexArray[i].name, namePart) != NULL) {
+                fprintf(stdout, "%s\n", indexArray[i].path);
+                fprintf(stdout, "%lu\n", indexArray[i].size);
+                fprintf(stdout, "%s\n\n", indexArray[i].type);
+            }
         }
     }
 }
 
 void findByID(int uid) {
 
+    FILE * file;
+    int count = 0;
+    char * fileEnv = getenv("PAGER");
+
     for (int i = 0; i < start; i++) {
         if (indexArray[i].uid == uid) {
-            printf("%s\n", indexArray[i].path);
-            printf("%lu\n", indexArray[i].size);
-            printf("%s\n\n", indexArray[i].type);
+            count++;
+        }
+    }
+
+    if (fileEnv != NULL && count >= 3) {
+
+        file = popen(fileEnv, "w");
+        if (file == NULL) {
+            ERR("Error in popen function.");
+        }
+
+        for (int i = 0; i < start; i++) {
+            if (indexArray[i].uid == uid) {
+                fprintf(file, "%s\n", indexArray[i].path);
+                fprintf(file, "%lu\n", indexArray[i].size);
+                fprintf(file, "%s\n\n", indexArray[i].type);
+            }
+        }
+
+        if (pclose(file) == -1) {
+            ERR("Error in pclose function.");
+        }
+    } else {
+        for (int i = 0; i < start; i++) {
+            if (indexArray[i].uid == uid) {
+                fprintf(stdout, "%s\n", indexArray[i].path);
+                fprintf(stdout, "%lu\n", indexArray[i].size);
+                fprintf(stdout, "%s\n\n", indexArray[i].type);
+            }
         }
     }
 }
