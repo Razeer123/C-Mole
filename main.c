@@ -343,8 +343,6 @@ void printFile(char * filePath) {
 
 }
 
-// TODO: Somehow safeguard the index file when indexing
-
 void * reindexFiles(void * arguments) {
 
     neededVariables_t * variables = arguments;
