@@ -16,6 +16,22 @@ Reading arguments. If they cannot be found program looks for them in environment
 
 # Part 3
 
-Opening a file and reading index from it, if its't not there program starts indexing files.
+Opening a file and reading index from it, if its't not there program starts indexing files. 
 
-**State**: Indexing function works. I still have to add writing & reading from file and thread support. 👷‍♀️🔧
+**State**: Finished in 85%. Lacks second index (to protect the first) and a timer. Maybe I'll do it. 👷‍♀️🔧
+
+# Part 4
+
+Reading commands and responding to them. Validation of input.
+
+**State**: Finished ✅
+
+# Part 5
+
+Pagination of three commands. 
+
+**State**: Finished ✅
+
+# Overall
+
+**State**: Fuck it, I'm done. 👨‍💻
