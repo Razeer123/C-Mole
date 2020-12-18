@@ -44,7 +44,7 @@ typedef struct controlSaving {
 } controlSaving_t;
 
 int recursiveWalk(const char * fileName, const struct stat * s, int fileType, struct FTW * f);
-void readArguments(int argc, char ** argv, char ** dirPath, char ** filePath, int * time);
+int readArguments(int argc, char ** argv, char ** dirPath, char ** filePath, int * time);
 void * threadWork(void * arguments);
 void printFile(char * filePath);
 void * reindexFiles(void * arguments);
@@ -72,8 +72,9 @@ int main(int argc, char ** argv) {
     int time = 0;
     int reindex;
     int file;
+    int flag;
 
-    readArguments(argc, argv, &dirPath, &filePath, &time);
+    flag = readArguments(argc, argv, &dirPath, &filePath, &time);
     // reindex -> stores boolean information about if reindexing will be happening
     reindex = time ? 1 : 0;
 
@@ -96,9 +97,23 @@ int main(int argc, char ** argv) {
         if (functionPath == NULL) {
             ERR("Error in malloc function");
         }
-        strcat(functionPath, dirPath);
-        strcat(functionPath, "/file.mole_index");
-        strcpy(variablesStructure.filePath, functionPath);
+
+        // FIXME: Add creation in home catalog
+
+        if (!flag) {
+            char *homeCatalog = malloc(sizeof(char) * MAX_PATH);
+            if (homeCatalog == NULL) {
+                ERR("Error in malloc function");
+            }
+            homeCatalog = getenv("HOME");
+            strcat(functionPath, homeCatalog);
+            strcat(functionPath, "/file.mole_index");
+            strcpy(variablesStructure.filePath, functionPath);
+            memset(homeCatalog, 0, MAX_PATH);
+        } else {
+            strcpy(variablesStructure.filePath, filePath);
+        }
+
         memset(functionPath, 0, MAX_PATH);
 
         if (((pthread_create(&variablesStructure.threadID, NULL, threadWork, &variablesStructure))) != 0) {
@@ -114,6 +129,9 @@ int main(int argc, char ** argv) {
         writeToStructure(variablesStructure.filePath);
     }
 
+    if ((file = open(variablesStructure.filePath, O_RDONLY, 0777)) < 0) {
+        ERR("Error when opening file!");
+    }
     printFile(variablesStructure.filePath);
 
     if (reindex) {
@@ -230,7 +248,7 @@ int recursiveWalk(const char * fileName, const struct stat * s, int fileType, st
 
 }
 
-void readArguments(int argc, char ** argv, char ** dirPath, char ** filePath, int * time) {
+int readArguments(int argc, char ** argv, char ** dirPath, char ** filePath, int * time) {
 
     int c;
     char * dirEnv = getenv("MOLE_DIR");
@@ -267,6 +285,13 @@ void readArguments(int argc, char ** argv, char ** dirPath, char ** filePath, in
     if (*filePath == NULL && fileEnv) {
         *filePath = fileEnv;
     }
+
+    if (*filePath == NULL) {
+        return 0;
+    }
+
+    return 1;
+
 }
 
 void * threadWork(void * arguments) {
@@ -291,26 +316,48 @@ void * threadWork(void * arguments) {
 
     for (int i = 0; i < start; i++) {
 
-        write(file, indexArray[i].name, strlen(indexArray[i].name));
-        write(file, "\n", 1);
-        write(file, indexArray[i].path, strlen(indexArray[i].path));
-        write(file, "\n", 1);
+        if (write(file, indexArray[i].name, strlen(indexArray[i].name)) != strlen(indexArray[i].name)) {
+            ERR("Error in write.");
+        }
+        if (write(file, "\n", 1) != 1) {
+            ERR("Error in write.");
+        }
+        if (write(file, indexArray[i].path, strlen(indexArray[i].path)) != strlen(indexArray[i].path)) {
+            ERR("Error in write.");
+        }
+        if (write(file, "\n", 1) != 1) {
+            ERR("Error in write.");
+        }
 
         char buffer[BUFFER_SIZE];
         sprintf(buffer, "%lu", indexArray[i].size);
-        write(file, buffer, strlen(buffer));
-        write(file, "\n", 1);
+        if (write(file, buffer, strlen(buffer)) != strlen(buffer)) {
+            ERR("Error in write.");
+        }
+        if (write(file, "\n", 1) != 1) {
+            ERR("Error in write.");
+        }
 
         sprintf(buffer, "%d", indexArray[i].uid);
-        write(file, buffer, strlen(buffer));
-        write(file, "\n", 1);
+        if (write(file, buffer, strlen(buffer)) != strlen(buffer)) {
+            ERR("Error in write.");
+        }
+        if (write(file, "\n", 1) != 1) {
+            ERR("Error in write.");
+        }
 
-        write(file, &indexArray[i].type, strlen(indexArray[i].type));
-        write(file, "\n", 1);
+        if (write(file, &indexArray[i].type, strlen(indexArray[i].type)) != strlen(indexArray[i].type)) {
+            ERR("Error in write.");
+        }
+        if (write(file, "\n", 1) != 1) {
+            ERR("Error in write.");
+        }
 
     }
 
-    write(file, "END\n\0", 5);
+    if (write(file, "END\n\0", 5) != 5) {
+        ERR("Error in write.");
+    }
 
     controls.savingInProgress = 0;
     fprintf(stdout, "Indexing finished.\n");
@@ -331,8 +378,10 @@ void printFile(char * filePath) {
     }
 
     char buffer[MAX_SIZE * 100];
-    while (read(file, buffer, sizeof(buffer)) > 0) {
+    if (read(file, buffer, sizeof(buffer)) > 0) {
         fprintf(stdout, "%s", buffer);
+    } else {
+        ERR("Error in read.");
     }
 
     memset(buffer, 0, sizeof(buffer));
