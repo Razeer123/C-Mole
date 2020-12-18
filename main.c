@@ -41,6 +41,7 @@ typedef struct controlSaving {
     int indexingInProgress;
     int savingInProgress;
     pthread_mutex_t indexInProgress;
+    pthread_mutex_t saveInProgress;
 } controlSaving_t;
 
 int recursiveWalk(const char * fileName, const struct stat * s, int fileType, struct FTW * f);
@@ -48,7 +49,7 @@ int readArguments(int argc, char ** argv, char ** dirPath, char ** filePath, int
 void * threadWork(void * arguments);
 void printFile(char * filePath);
 void * reindexFiles(void * arguments);
-int safelyExitProgram(int file);
+int safelyExitProgram(int file, pthread_t pid);
 int forceExitProgram(int file, pthread_t pid);
 void countEachFile();
 void findLargerFiles(long size);
@@ -87,7 +88,9 @@ int main(int argc, char ** argv) {
     controls.indexingInProgress = 0;
     controls.savingInProgress = 0;
     pthread_mutex_t firstMutex = PTHREAD_MUTEX_INITIALIZER;
+    pthread_mutex_t secondMutex = PTHREAD_MUTEX_INITIALIZER;
     controls.indexInProgress = firstMutex;
+    controls.saveInProgress = secondMutex;
 
     // It's the beginning of the program, checks whether index the file for the first time or print the content
 
@@ -154,7 +157,7 @@ int main(int argc, char ** argv) {
         }
 
         if ((strcmp(input, "exit")) == 0) {
-            safelyExitProgram(file);
+            safelyExitProgram(file, variablesStructure.threadID);
         } else if (strcmp(input, "exit!") == 0) {
             forceExitProgram(file, variablesStructure.threadID);
         } else if (strcmp(input, "index") == 0) {
@@ -415,23 +418,35 @@ void * reindexFiles(void * arguments) {
 }
 
 int forceExitProgram(int file, pthread_t pid) {
-    while (controls.indexingInProgress == 1) {
-        sleep(1);
+    pthread_mutex_lock(&controls.saveInProgress);
+    if (controls.savingInProgress == 1) {
+        pthread_mutex_unlock(&controls.saveInProgress);
+        fprintf(stderr, "Saving in progress! Waiting...\n");
+        pthread_join(pid, NULL);
+    } else {
+        pthread_mutex_unlock(&controls.indexInProgress);
     }
     pthread_cancel(pid);
     if (close(file) < 0) {
         ERR("Error when closing the file!");
     }
+    pthread_mutex_destroy(&controls.saveInProgress);
     exit(EXIT_SUCCESS);
 }
 
-int safelyExitProgram(int file) {
-    while (controls.indexingInProgress == 1) {
-        sleep(1);
+int safelyExitProgram(int file, pthread_t pid) {
+    pthread_mutex_lock(&controls.indexInProgress);
+    if (controls.indexingInProgress == 1) {
+        pthread_mutex_unlock(&controls.indexInProgress);
+        fprintf(stderr, "Indexing in progress! Waiting...\n");
+        pthread_join(pid, NULL);
+    } else {
+        pthread_mutex_unlock(&controls.indexInProgress);
     }
     if (close(file) < 0) {
         ERR("Error when closing the file!");
     }
+    pthread_mutex_destroy(&controls.indexInProgress);
     exit(EXIT_SUCCESS);
 }
 
