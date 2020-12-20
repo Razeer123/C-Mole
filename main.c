@@ -57,6 +57,7 @@ void writeToStructure(char * filePath);
 void * forceIndexFiles(void * arguments);
 void findByNamePart(char * namePart);
 void findByID(int uid);
+void mainMenu(int file, neededVariables_t variables);
 
 indexData_t indexArray[MAX_FILES];
 int start = 0;
@@ -101,8 +102,6 @@ int main(int argc, char ** argv) {
             ERR("Error in malloc function");
         }
 
-        // FIXME: Add creation in home catalog
-
         if (!flag) {
             char *homeCatalog = malloc(sizeof(char) * MAX_PATH);
             if (homeCatalog == NULL) {
@@ -143,58 +142,8 @@ int main(int argc, char ** argv) {
         }
     }
 
-    // Main menu
+    mainMenu(file, variablesStructure);
 
-    char input[MAX_SIZE];
-
-    while (1) {
-
-        scanf("%[^\n]%*c", input);
-
-        if (strlen(input) == MAX_SIZE && input[MAX_SIZE - 1] != '\0') {
-            fprintf(stderr, "There is a 100 characters limit - choose another path.\n");
-            continue;
-        }
-
-        if ((strcmp(input, "exit")) == 0) {
-            safelyExitProgram(file, variablesStructure.threadID);
-        } else if (strcmp(input, "exit!") == 0) {
-            forceExitProgram(file, variablesStructure.threadID);
-        } else if (strcmp(input, "index") == 0) {
-            pthread_mutex_lock(&controls.indexInProgress);
-            if (controls.indexingInProgress == 1) {
-                pthread_mutex_unlock(&controls.indexInProgress);
-                fprintf(stderr, "Indexing is already in progress!\n");
-                continue;
-            } else {
-                pthread_mutex_unlock(&controls.indexInProgress);
-                while (controls.savingInProgress == 1) {
-                    sleep(1);
-                }
-                if (((pthread_create(&variablesStructure.threadID, NULL, forceIndexFiles, &variablesStructure))) != 0) {
-                    ERR("Error in pthread_create.");
-                }
-            }
-        } else if (strcmp(input, "count") == 0) {
-            countEachFile();
-        } else if (strstr(input, "largerthan") != NULL) {
-            char temp[MAX_SIZE];
-            memcpy(temp, &input[11], strlen(input));
-            long number = atoi(temp);
-            findLargerFiles(number);
-        } else if (strstr(input, "namepart") != NULL) {
-            char temp[MAX_SIZE];
-            memcpy(temp, &input[9], strlen(input));
-            findByNamePart(temp);
-        } else if (strstr(input, "owner") != NULL) {
-            char temp[MAX_SIZE];
-            memcpy(temp, &input[6], strlen(input));
-            int number = atoi(temp);
-            findByID(number);
-        } else {
-            fprintf(stderr, "Incorrect command! Try again.\n");
-        }
-    }
 }
 
 int recursiveWalk(const char * fileName, const struct stat * s, int fileType, struct FTW * f) {
@@ -664,6 +613,58 @@ void findByID(int uid) {
                 fprintf(stdout, "%lu\n", indexArray[i].size);
                 fprintf(stdout, "%s\n\n", indexArray[i].type);
             }
+        }
+    }
+}
+
+void mainMenu(int file, neededVariables_t variables) {
+
+    neededVariables_t variablesStructure = variables;
+    char input[MAX_SIZE];
+
+    while (1) {
+
+        scanf("%[^\n]%*c", input);
+
+        if (strlen(input) == MAX_SIZE && input[MAX_SIZE - 1] != '\0') {
+            fprintf(stderr, "There is a 100 characters limit - choose another path.\n");
+            continue;
+        }
+
+        if ((strcmp(input, "exit")) == 0) {
+            safelyExitProgram(file, variablesStructure.threadID);
+        } else if (strcmp(input, "exit!") == 0) {
+            forceExitProgram(file, variablesStructure.threadID);
+        } else if (strcmp(input, "index") == 0) {
+            pthread_mutex_lock(&controls.indexInProgress);
+            if (controls.indexingInProgress == 1) {
+                pthread_mutex_unlock(&controls.indexInProgress);
+                fprintf(stderr, "Indexing is already in progress!\n");
+                continue;
+            } else {
+                pthread_mutex_unlock(&controls.indexInProgress);
+                if (((pthread_create(&variablesStructure.threadID, NULL, forceIndexFiles, &variablesStructure))) != 0) {
+                    ERR("Error in pthread_create.");
+                }
+            }
+        } else if (strcmp(input, "count") == 0) {
+            countEachFile();
+        } else if (strstr(input, "largerthan") != NULL) {
+            char temp[MAX_SIZE];
+            memcpy(temp, &input[11], strlen(input));
+            long number = atoi(temp);
+            findLargerFiles(number);
+        } else if (strstr(input, "namepart") != NULL) {
+            char temp[MAX_SIZE];
+            memcpy(temp, &input[9], strlen(input));
+            findByNamePart(temp);
+        } else if (strstr(input, "owner") != NULL) {
+            char temp[MAX_SIZE];
+            memcpy(temp, &input[6], strlen(input));
+            int number = atoi(temp);
+            findByID(number);
+        } else {
+            fprintf(stderr, "Incorrect command! Try again.\n");
         }
     }
 }
