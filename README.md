@@ -1,37 +1,17 @@
-# Mole - project state 🤡
+# C Mole - low-level, POSIX compliant file indexer 🤖
 
-This document explains the state of the project and what still has to be done in each part.
+C Mole is a POSIX compliant, low-level file indexer that can be used on UNIX systems, like Linux or Mac OS. This app was written entirely by me as a project for Operating Systems course in the Warsaw University of Technology. After running, program traverses all files in a given directory and its subdirectories and waits for user input. User can then display some information about files or perform
+some other operations, which are explained later. 
 
-# Part 1
+# Usage 💽
 
-General information about the project.
+Download main.c file and run terminal in a directory, where the file has been downloaded. Compile it using:
 
-**State**: Finished ✅
+`gcc main.c -o main -lpthread`
 
-# Part 2
+Program can be run using:
 
-Reading arguments. If they cannot be found program looks for them in environment variables. If they still aren't there it throws an error or proceeds with some default values.
+`./main -d <path to a directory that will be traversed> -f <path to a file where index is stored> -t <time between rebuilds of index>`
 
-**State**: Finished ✅
+First argument can be replaced by `$MOLE_DIR` environmental variable. Second argument is optional but can also be replaced by `$MOLE_INDEX_PATH` environmental variable. When neither variable or path is present program creates index in user's home directory. Third argument has to be in range [30, 7200]. When it's not provided automatic reindexing is disabled.
 
-# Part 3
-
-Opening a file and reading index from it, if its't not there program starts indexing files. 
-
-**State**: Finished in 85%. Lacks second index (to protect the first) and a timer. Maybe I'll do it. 👷‍♀️🔧
-
-# Part 4
-
-Reading commands and responding to them. Validation of input.
-
-**State**: Finished ✅
-
-# Part 5
-
-Pagination of three commands. 
-
-**State**: Finished ✅
-
-# Overall
-
-**State**: Fuck it, I'm done. 👨‍💻
