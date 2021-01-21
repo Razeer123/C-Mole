@@ -15,3 +15,29 @@ Program can be run using:
 
 First argument can be replaced by `$MOLE_DIR` environmental variable. Second argument is optional but can also be replaced by `$MOLE_INDEX_PATH` environmental variable. When neither variable or path is present program creates index in user's home directory. Third argument has to be in range [30, 7200]. When it's not provided automatic reindexing is disabled.
 
+# Functions 🔧
+
+At the start C Mole starts the process of indexing files. It supports the following formats:
+- directories
+- JPEG images
+- PNG images
+- gzip compressed files
+- zip compressed files (including any files based on zip format like docx, odt etc.).
+
+Index stores such information about each file or directory:
+- file name
+- an absolute path to a file
+- size
+- owner's uid
+- type.
+
+User can use a few commands to perform some operations:
+- `exit` - program waits till indexing finishes and exits
+- `exit!` - program terminates indexing, saves data and exits
+- `index` - stars the reindexing procedure; if something changed, C Mole will notice it 🕵️
+- `count` - program counts the number of each file type and prints it to the standard output
+- `largerthan x` - displays information about files largerthan some value
+- `namepart x` - displays information about files which contain a given substring
+- `owner uid` - displays files owned by a given user
+
+It's worth mentioning that three last commands support pagination and can be displayed in programs like less. In order to do that you have to set environmental variable `$PAGER` to the name of the wanted program. Otherwise, everything is displayed as standard output. 
