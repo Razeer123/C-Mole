@@ -1,6 +1,6 @@
 # C Mole - low-level, POSIX compliant file indexer 🤖
 
-C Mole is a POSIX compliant, low-level file indexer that can be used on UNIX systems, like Linux or macOS. This app was written entirely by me as a project for Operating Systems course in the Warsaw University of Technology. After running, the program traverses all files in a given directory and its subdirectories and waits for user input. User can then display some information about files or perform some other operations, which are explained later. 
+C Mole is a POSIX compliant, low-level file indexer that can be used on UNIX systems, like Linux or macOS. This app was written entirely by me as a project for Operating Systems course in the Faculty of Mathematics and Information Science of the Warsaw University of Technology. After running, the program traverses all files in a given directory and its subdirectories and waits for user input. User can then display some information about files or perform some other operations, which are explained later. 
 
 # Usage 💽
 
